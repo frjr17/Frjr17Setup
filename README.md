@@ -16,6 +16,8 @@ Small collection of Bash scripts for setting up a Fedora desktop, configuring GN
 
 - `bravePwa.sh` — Installs/uninstalls web apps (WhatsApp, Work WhatsApp, ChatGPT, Claude, Canva, Notion) as desktop launchers that open in Brave app-mode windows. Usage: `./bravePwa.sh install|uninstall|list [app ...]`. Each app runs as its own isolated Brave instance (own `--user-data-dir`) so it gets a correct, separate dock/taskbar icon on Wayland instead of grouping under Brave. On first install (with Brave closed) each app's data dir is seeded from your main Brave profile — via copy-on-write reflinks on Btrfs, so it's near-free on disk — carrying your logins, extensions and settings across. Work WhatsApp is excluded from seeding (see `NOSEED` in the script) so it starts logged out — scan a second number's QR to run a WhatsApp account separate from your main one.
 
+- `fedora-harden.sh` — Security hardening baseline for a personal Fedora Workstation laptop (single user, GNOME, developer machine). Dry-run by default; see [🔐 Hardening](#-hardening) below.
+
 - `snapper.sh` — Helpers around `snapper` (Btrfs snapshot management). Provides shortcuts for creating, listing, and cleaning snapshots so you can manage system rollbacks. Run with care on systems using Btrfs.
 
 - `fonts/` — Local font archives referenced by the shell setup. Place required font ZIPs here so `favoriteShell.sh` can install them.
@@ -59,6 +61,44 @@ chmod +x *.sh
 ## ⚠️ Safety
 
 These scripts make system-wide changes. Review them before running, especially if you want to adjust package lists, shell settings, or GNOME keybindings.
+
+## 🔐 Hardening
+
+`fedora-harden.sh` targets a **personal Fedora Workstation laptop**. Threat model: lost/stolen laptop, untrusted Wi-Fi, malicious downloads. Not a server — server/enterprise controls (banners, password aging, umask, remote logging, USB lockdown, most sysctl tweaks) are intentionally omitted; the script header explains each.
+
+| Section     | Action                                                                                          |
+| ----------- | ----------------------------------------------------------------------------------------------- |
+| `preflight` | Verify Fedora, non-root, sudo, network. Always runs.                                             |
+| `report`    | Read-only status: firewall, SELinux, LUKS, Secure Boot, dev services, auto-updates. Always runs. |
+| `updates`   | `dnf upgrade`, install + enable `dnf-automatic` with `apply_updates = yes`.                      |
+| `firewall`  | Default zone → `public` (Fedora's default zone opens all ports >1024).                           |
+| `audit`     | Lynis audit, saved to a file, laptop-relevant suggestions only.                                   |
+| `rkhunter`  | Install, fix `WEB_CMD`, set baseline, run check, label benign warnings.                          |
+| `aide`      | Init file-integrity database (skipped if one exists; `--force` to redo).                         |
+| `services`  | Offer to disable `httpd`/`mariadb`/`mysqld` at boot — asks per service, never touches docker.     |
+| `helpers`   | Install `sec-check` and `sec-rebaseline` to `/usr/local/bin`.                                     |
+
+It **never** disables SELinux, and only _reports_ disk-encryption and Secure Boot status (those need a reinstall / firmware access).
+
+```bash
+./fedora-harden.sh                # dry run (default) — prints, changes nothing
+./fedora-harden.sh --apply        # make changes, confirm each section
+./fedora-harden.sh --apply --yes  # no section prompts (service disables still ask)
+--only <section>                  # run just one section (repeatable)
+--skip <section>                  # skip a section (repeatable)
+--force                           # re-init AIDE db even if one exists
+```
+
+Idempotent — safe to re-run any time; already-correct items print `[ok]`. Edited configs are backed up to `<file>.bak-<timestamp>` and listed at the end. Everything is logged to `/var/log/fedora-harden.log`.
+
+Maintenance rhythm:
+
+```bash
+sec-check        # BEFORE a system update — verify nothing is off
+sec-rebaseline   # AFTER a system update — accept new files as the trusted baseline
+```
+
+Skip the rebaseline and every future check drowns in update noise; skip the check and you can't tell an update's changes from an intruder's.
 
 ## 🔧 Configuration
 
