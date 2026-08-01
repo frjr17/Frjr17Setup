@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/log.sh"
+
+# One step per app, so the count only depends on what we're actually acting on.
+BK_TOTAL=0
+
 APPS_DIR="$HOME/.local/share/applications"
 ICONS_DIR="$HOME/.local/share/icons"
 DATA_DIR="$HOME/.local/share/brave-pwa"
@@ -49,7 +55,7 @@ find_app() {
   for entry in "${APPS[@]}"; do
     [ "${entry%%|*}" = "$1" ] && echo "$entry" && return 0
   done
-  echo "❌ Unknown app: $1" >&2
+  echo "ERROR: unknown app: $1" >&2
   return 1
 }
 
@@ -99,27 +105,28 @@ install_app() {
   case "$icon_url" in *simpleicons*|*.svg) ext=svg ;; esac
   icon="$ICONS_DIR/brave-pwa-$name.$ext"
 
-  echo "📦 Installing $display..."
+  step "Installing $display"
 
   rm -f "$ICONS_DIR/brave-pwa-$name".{png,svg}
   curl -fsSL -A "Mozilla/5.0" "$icon_url" -o "$icon" ||
-    echo "⚠️ Could not download icon for $display"
+    warn "could not download icon for $display"
+  say "icon: $icon"
 
   if [ -n "$fill" ] && [ "$ext" = svg ]; then
     sed -i "s|<svg |<svg fill=\"$fill\" |" "$icon"
   fi
 
-  if [ ! -f "$DATA_DIR/$name/.seeded" ]; then
-    if is_noseed "$name"; then
-      echo "   ↳ fresh profile (separate login; not seeded from your main Brave)"
-      mkdir -p "$DATA_DIR/$name/$name"
-      touch "$DATA_DIR/$name/.seeded"
-    elif [ -d "$MAIN_PROFILE" ]; then
-      echo "   ↳ seeding from your main Brave profile (logins, extensions, settings)..."
-      seed_profile "$name"
-    else
-      echo "   ↳ no main Brave profile found; app will start logged out."
-    fi
+  if [ -f "$DATA_DIR/$name/.seeded" ]; then
+    say "profile already seeded"
+  elif is_noseed "$name"; then
+    say "fresh profile (separate login; not seeded from your main Brave)"
+    mkdir -p "$DATA_DIR/$name/$name"
+    touch "$DATA_DIR/$name/.seeded"
+  elif [ -d "$MAIN_PROFILE" ]; then
+    say "seeding from your main Brave profile (logins, extensions, settings)"
+    seed_profile "$name"
+  else
+    warn "no main Brave profile found; app will start logged out"
   fi
 
   cat >"$desktop" <<EOF
@@ -133,22 +140,19 @@ Terminal=false
 StartupWMClass=$wmclass
 Categories=Network;
 EOF
-
-  echo "✅ $display installed."
+  say "wrote $desktop"
 }
 
 uninstall_app() {
   IFS='|' read -r name display url _ <<<"$1"
 
-  echo "🗑️ Uninstalling $display..."
+  step "Uninstalling $display"
   rm -f "$APPS_DIR/brave-pwa-$name.desktop" "$ICONS_DIR/brave-pwa-$name".{png,svg}
+  say "removed the launcher and icon"
 
   if [ -d "$DATA_DIR/$name" ]; then
-    echo "ℹ️ App data (login) kept. Remove it manually with:"
-    echo "  rm -rf \"$DATA_DIR/$name\""
+    say "app data (login) kept — remove it with: rm -rf \"$DATA_DIR/$name\""
   fi
-
-  echo "✅ $display uninstalled."
 }
 
 [ $# -ge 1 ] || usage
@@ -167,8 +171,8 @@ case "$cmd" in
     ;;
   install)
     if ! command -v brave-browser >/dev/null 2>&1; then
-      echo "❌ brave-browser not found. Install it with:"
-      echo "  curl -fsS https://dl.brave.com/install.sh | sh"
+      echo "ERROR: brave-browser not found. Install it with:" >&2
+      echo "  curl -fsS https://dl.brave.com/install.sh | sh" >&2
       exit 1
     fi
     mkdir -p "$APPS_DIR" "$ICONS_DIR" "$DATA_DIR"
@@ -189,6 +193,7 @@ if [ $# -eq 0 ]; then
 else
   for name in "$@"; do entries+=("$(find_app "$name")"); done
 fi
+BK_TOTAL=$(( ${#entries[@]} + 1 ))   # +1 for the desktop-database refresh
 
 # Seeding copies your live Brave profile, so Brave must be closed for a clean copy.
 if [ "$cmd" = install ]; then
@@ -199,16 +204,15 @@ if [ "$cmd" = install ]; then
     [ -f "$DATA_DIR/$n/.seeded" ] || need_seed=1
   done
   if [ "$need_seed" = 1 ] && main_brave_running; then
-    echo "⚠️ First-time setup copies your Brave profile (logins, extensions, settings)"
-    echo "   into each app. That needs Brave fully closed so the copy isn't corrupted."
-    echo "   Quit Brave completely, then re-run:  $0 install $*"
+    echo "ERROR: first-time setup copies your Brave profile (logins, extensions, settings)" >&2
+    echo "       into each app. That needs Brave fully closed so the copy isn't corrupted." >&2
+    echo "       Quit Brave completely, then re-run:  $0 install $*" >&2
     exit 1
   fi
 fi
 
 for entry in "${entries[@]}"; do "$action" "$entry"; done
 
+step "Exporting to the desktop database"
 command -v update-desktop-database >/dev/null 2>&1 &&
-  update-desktop-database "$APPS_DIR" || true
-
-echo "🎉 Done."
+  run update-desktop-database "$APPS_DIR" || true

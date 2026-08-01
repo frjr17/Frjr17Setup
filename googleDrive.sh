@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/log.sh"
+
 REMOTE_NAME="${REMOTE_NAME:-googleDrive}"
 REMOTE="${REMOTE_NAME}:"
 LOCAL_DIR="${LOCAL_DIR:-$HOME/GoogleDrive}"
@@ -42,60 +45,57 @@ EOF
   esac
 done
 
-echo "Checking dependencies..."
+step "Checking dependencies"
 
 # cmd or cmd:package (when the dnf package name differs from the command)
 MISSING=0
 for dep in rclone systemctl flock notify-send:libnotify fusermount3:fuse3; do
   cmd="${dep%%:*}"
   if ! command -v "$cmd" >/dev/null 2>&1; then
-    echo "Missing $cmd. Install it with:  sudo dnf install ${dep#*:}"
+    warn "missing $cmd — install it with: sudo dnf install ${dep#*:}"
     MISSING=1
   fi
 done
 
 if [ "$MISSING" -ne 0 ]; then
-  echo "Install missing packages, then rerun this script."
+  say "install the missing packages, then rerun this script"
   exit 1
 fi
 
-echo "Checking rclone remote: $REMOTE"
+step "Checking rclone remote $REMOTE"
 
 if ! rclone listremotes | grep -qx "${REMOTE_NAME}:"; then
-  echo "Remote ${REMOTE_NAME}: does not exist."
-  echo "Create it first with:"
-  echo "  rclone config"
+  warn "remote ${REMOTE_NAME}: does not exist — create it first with: rclone config"
   exit 1
 fi
 
 rclone lsf "$REMOTE" --drive-skip-dangling-shortcuts >/dev/null
+say "remote is reachable"
 
-echo "Stopping old rclone service/timer if present..."
+step "Stopping any old rclone service and timer"
 
 systemctl --user disable --now "$TIMER_NAME" >/dev/null 2>&1 || true
 systemctl --user disable --now "$SERVICE_NAME" >/dev/null 2>&1 || true
 
 if findmnt "$LOCAL_DIR" >/dev/null 2>&1; then
-  echo "$LOCAL_DIR is mounted. Trying to unmount stale/old rclone mount..."
+  say "$LOCAL_DIR is mounted — unmounting the stale rclone mount"
   fusermount3 -uz "$LOCAL_DIR" >/dev/null 2>&1 || true
 fi
 
 if findmnt "$LOCAL_DIR" >/dev/null 2>&1; then
-  echo "Could not unmount $LOCAL_DIR."
-  echo "Check it manually with:"
-  echo "  findmnt $LOCAL_DIR"
-  echo "  fusermount3 -uz $LOCAL_DIR"
+  warn "could not unmount $LOCAL_DIR — check it with: findmnt $LOCAL_DIR ; fusermount3 -uz $LOCAL_DIR"
   exit 1
 fi
 
 mkdir -p "$LOCAL_DIR" "$SYSTEMD_DIR" "$CACHE_DIR" "$HOME/.local/bin"
 
-echo "Importing GNOME notification environment..."
+step "Importing the GNOME notification environment"
 
 systemctl --user import-environment DISPLAY WAYLAND_DISPLAY XAUTHORITY DBUS_SESSION_BUS_ADDRESS >/dev/null 2>&1 || true
 dbus-update-activation-environment --systemd DISPLAY WAYLAND_DISPLAY XAUTHORITY DBUS_SESSION_BUS_ADDRESS >/dev/null 2>&1 || true
 
-echo "Writing notification wrapper: $WRAPPER"
+step "Writing the notification wrapper"
+say "$WRAPPER"
 
 cat > "$WRAPPER" <<'EOF'
 #!/usr/bin/env bash
@@ -171,7 +171,7 @@ EOF
 
 chmod +x "$WRAPPER"
 
-echo "Writing systemd user service..."
+step "Writing the systemd user service"
 
 cat > "$SYSTEMD_DIR/$SERVICE_NAME" <<EOF
 [Unit]
@@ -186,8 +186,9 @@ Environment=LOCAL_DIR=$LOCAL_DIR
 Environment=MAX_DELETE=$MAX_DELETE
 ExecStart=$WRAPPER
 EOF
+say "$SYSTEMD_DIR/$SERVICE_NAME"
 
-echo "Writing systemd user timer..."
+step "Writing the systemd user timer"
 
 cat > "$SYSTEMD_DIR/$TIMER_NAME" <<EOF
 [Unit]
@@ -203,66 +204,56 @@ Persistent=true
 [Install]
 WantedBy=timers.target
 EOF
+say "$SYSTEMD_DIR/$TIMER_NAME — every $TIMER_INTERVAL"
 
 if [ "$RUN_INIT" -eq 1 ]; then
-  echo
-  echo "Initial baseline requested."
-  echo "Local folder:  $LOCAL_DIR"
-  echo "Remote folder: $REMOTE"
-  echo
+  step "Running the initial baseline"
+  say "local:  $LOCAL_DIR"
+  say "remote: $REMOTE"
 
   if [ -z "$(find "$LOCAL_DIR" -mindepth 1 -maxdepth 1 2>/dev/null | head -n 1)" ]; then
-    echo "Local folder is empty. Downloading remote files first..."
-    rclone copy "$REMOTE" "$LOCAL_DIR" \
+    say "local folder is empty — downloading remote files first"
+    run rclone copy "$REMOTE" "$LOCAL_DIR" \
       --progress \
       --drive-skip-dangling-shortcuts
   else
-    echo "Local folder is not empty. Skipping initial rclone copy."
+    say "local folder is not empty — skipping the initial rclone copy"
   fi
 
-  echo
-  echo "Running baseline dry-run..."
-  rclone bisync "$LOCAL_DIR" "$REMOTE" \
+  say "dry run first"
+  run rclone bisync "$LOCAL_DIR" "$REMOTE" \
     --resync \
     --resync-mode newer \
     --drive-skip-dangling-shortcuts \
     --dry-run \
     -v
 
-  echo
+  # Not wrapped: the prompt must reach the terminal unbuffered.
   read -r -p "Proceed with real baseline bisync? Type YES to continue: " CONFIRM
 
   if [ "$CONFIRM" != "YES" ]; then
-    echo "Baseline cancelled."
-    echo "Service files were written, but timer will not be enabled."
+    warn "baseline cancelled — service files were written, but the timer will not be enabled"
     exit 1
   fi
 
-  echo "Running real baseline..."
-  rclone bisync "$LOCAL_DIR" "$REMOTE" \
+  say "running the real baseline"
+  run rclone bisync "$LOCAL_DIR" "$REMOTE" \
     --resync \
     --resync-mode newer \
     --drive-skip-dangling-shortcuts \
     -v
 fi
 
-echo "Reloading systemd user units..."
+step "Enabling the timer"
 
-systemctl --user daemon-reload
-systemctl --user enable --now "$TIMER_NAME"
+run systemctl --user daemon-reload
+run systemctl --user enable --now "$TIMER_NAME"
+run systemctl --user --no-pager status "$TIMER_NAME" || true
 
-echo
-echo "Done."
-echo
-echo "Local Google Drive folder:"
-echo "  $LOCAL_DIR"
-echo
-echo "Timer status:"
-systemctl --user --no-pager status "$TIMER_NAME" || true
-
-echo
-echo "Useful commands:"
-echo "  systemctl --user list-timers | grep rclone"
-echo "  systemctl --user start $SERVICE_NAME"
-echo "  journalctl --user -u $SERVICE_NAME -f"
-echo "  tail -f $LATEST_LOG"
+step "Exporting sync setup"
+say "local Google Drive folder: $LOCAL_DIR"
+say "useful commands:"
+say "  systemctl --user list-timers | grep rclone"
+say "  systemctl --user start $SERVICE_NAME"
+say "  journalctl --user -u $SERVICE_NAME -f"
+say "  tail -f $LATEST_LOG"

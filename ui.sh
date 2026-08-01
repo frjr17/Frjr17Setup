@@ -2,56 +2,55 @@
 
 set -euo pipefail
 
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/log.sh"
+
 # ─────────────────────────────────────────────
 # Update system
 # ─────────────────────────────────────────────
-echo "📦 Updating system packages..."
-sudo dnf update -y
-
+step "Updating system packages"
+run sudo dnf update -y
 
 # Entering temporary directory for all operations
 cd /tmp
 
-echo "🌟 Installing WhiteSur theme"
+step "Installing the WhiteSur theme"
 rm -rf WhiteSurInstaller   # rerun-safe: clone aborts under set -e if the dir exists
-git clone https://github.com/frjr17/WhiteSurInstaller.git
+run git clone https://github.com/frjr17/WhiteSurInstaller.git
 cd ./WhiteSurInstaller
 
-chmod +x *.sh
-./install.sh
+chmod +x ./*.sh
+run ./install.sh
 
 # ─────────────────────────────────────────────
 # Install pipx and gnome-extensions-cli
 # ─────────────────────────────────────────────
 
-echo "🐍 Ensuring pipx is available..."
-if ! command -v pipx &> /dev/null; then
-    sudo dnf install -y pipx python3-pip
+step "Ensuring pipx is available"
+if command -v pipx &> /dev/null; then
+    cached "pipx already installed"
+else
+    run sudo dnf install -y pipx python3-pip
 fi
 
-echo "🔁 Ensuring pipx path is in shell..."
-pipx ensurepath
-
+step "Installing gnome-extensions-cli"
+run pipx ensurepath
 # Reload shell environment to make pipx available immediately
 export PATH="$HOME/.local/bin:$PATH"
-
-echo "📦 Installing gnome-extensions-cli..."
-pipx install gnome-extensions-cli --system-site-packages
+run pipx install gnome-extensions-cli --system-site-packages
 
 # ─────────────────────────────────────────────
 # Install Extension Manager (GUI)
 # ─────────────────────────────────────────────
 
-echo "🧩 Installing GNOME Extension Manager GUI..."
-sudo flatpak install -y flathub com.mattjakeman.ExtensionManager
+step "Installing the GNOME Extension Manager GUI"
+run sudo flatpak install -y flathub com.mattjakeman.ExtensionManager
 
 # ─────────────────────────────────────────────
 # Install GNOME Extensions via CLI
 # ─────────────────────────────────────────────
 
-echo "🎨 Installing GNOME Shell extensions..."
+step "Installing GNOME Shell extensions"
 extensions=(
   user-theme@gnome-shell-extensions.gcampax.github.com
   blur-my-shell@aunetx
@@ -63,126 +62,99 @@ extensions=(
 )
 
 for ext in "${extensions[@]}"; do
-  echo "→ Installing $ext"
-  gnome-extensions-cli install "$ext" || echo "⚠️ Failed to install: $ext"
+  say "installing $ext"
+  run gnome-extensions-cli install "$ext" || warn "failed to install: $ext"
 done
 
 # Installing Compiz Alike Magic Lamp Effect
-echo "✨ Installing Compiz Alike Magic Lamp Effect"
+step "Installing Compiz Alike Magic Lamp Effect"
 cd /tmp   # WhiteSur install above left us inside its clone dir
 rm -rf compiz-alike-magic-lamp-effect
 
-git clone https://github.com/hermes83/compiz-alike-magic-lamp-effect.git
+run git clone https://github.com/hermes83/compiz-alike-magic-lamp-effect.git
 cd compiz-alike-magic-lamp-effect
 
-if ! bash install.sh; then
-  echo "⚠️ Compiz Alike Magic Lamp Effect install failed, continuing with the rest of the script."
+if run bash install.sh; then
+  say "restart GNOME Shell for the effect to take hold"
+else
+  warn "install failed, continuing with the rest of the script"
 fi
-echo "✅ Compiz Alike Magic Lamp Effect installed successfully. (You may need to restart GNOME Shell for the changes to take effect.)"
 
 # Installing Hide Top Bar extension
-echo "🔝 Installing Hide Top Bar extension"
+step "Installing the Hide Top Bar extension"
 cd /tmp
 rm -rf hidetopbar
 
-git clone https://gitlab.gnome.org/tuxor1337/hidetopbar.git
+run git clone https://gitlab.gnome.org/tuxor1337/hidetopbar.git
 cd hidetopbar
 
-make
-gnome-extensions-cli install ./hidetopbar.zip
+run make
+run gnome-extensions-cli install ./hidetopbar.zip
 
 # ─────────────────────────────────────────────
 # Installing RPM Fusion
 # ─────────────────────────────────────────────
 
-echo "📦 Enabling RPM Fusion repositories..."
-sudo dnf install https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm
-echo "✅ RPM Fusion repositories enabled successfully."
+step "Enabling the RPM Fusion repositories"
+# -y is required now: dnf's confirmation prompt is invisible through the log pipe.
+run sudo dnf install -y "https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm" "https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm"
 
 # ─────────────────────────────────────────────
 # Installing Multimedia codecs and drivers
 # ─────────────────────────────────────────────
 
-echo "📦 Installing multimedia codecs and drivers..."
-sudo dnf upgrade --refresh
-sudo dnf install intel-media-driver libva-utils libavcodec-freeworld
-echo "✅ Multimedia codecs and drivers installed successfully."
+step "Installing multimedia codecs and drivers"
+run sudo dnf upgrade --refresh
+run sudo dnf install -y intel-media-driver libva-utils libavcodec-freeworld
 
 # ─────────────────────────────────────────────
 # Installing apps
 # ─────────────────────────────────────────────
 
-echo "📦 Installing Snapd..."
-sudo dnf install snapd -y
-sudo ln -s /var/lib/snapd/snap /snap
+step "Installing Snapd"
+run sudo dnf install snapd -y
+sudo ln -s /var/lib/snapd/snap /snap || say "/snap symlink already present"
 
-# LibreOffice
-echo "📚 Installing LibreOffice..."
-sudo dnf install -y libreoffice
-echo "✅ LibreOffice installed successfully."
+step "Installing LibreOffice"
+run sudo dnf install -y libreoffice
 
-# Brave
-echo "🌐 Installing Brave..."
-curl -fsS https://dl.brave.com/install.sh | sh
-echo "✅ Brave installed successfully."
+step "Installing Brave"
+run bash -c 'curl -fsS https://dl.brave.com/install.sh | sh'
 
-# Spotify
-echo "🎵 Installing Spotify..."
-sudo snap install spotify
-echo "✅ Spotify installed successfully."
+step "Installing Spotify"
+run sudo snap install spotify
 
-# Visual Studio Code
-echo "💻 Installing Visual Studio Code..."
-sudo rpm --import https://packages.microsoft.com/keys/microsoft.asc &&
-echo -e "[code]\nname=Visual Studio Code\nbaseurl=https://packages.microsoft.com/yumrepos/vscode\nenabled=1\nautorefresh=1\ntype=rpm-md\ngpgcheck=1\ngpgkey=https://packages.microsoft.com/keys/microsoft.asc" | sudo tee /etc/yum.repos.d/vscode.repo > /dev/null
+step "Installing Visual Studio Code"
+run sudo rpm --import https://packages.microsoft.com/keys/microsoft.asc
+printf '[code]\nname=Visual Studio Code\nbaseurl=https://packages.microsoft.com/yumrepos/vscode\nenabled=1\nautorefresh=1\ntype=rpm-md\ngpgcheck=1\ngpgkey=https://packages.microsoft.com/keys/microsoft.asc\n' | sudo tee /etc/yum.repos.d/vscode.repo > /dev/null
+run sudo dnf check-update || true   # exits 100 when updates are available
+run sudo dnf install -y code
 
-dnf check-update &&
-sudo dnf install -y code 
-echo "✅ Visual Studio Code installed successfully."
+step "Installing the Google Drive File Stream driver"
+run sudo dnf copr enable fluhus/gnome-googledrive
+run sudo dnf update --refresh
 
-# Google Drive File Stream Driver
-echo "📁 Installing Google Drive File Stream Driver..."
-sudo dnf copr enable fluhus/gnome-googledrive
-sudo dnf update --refresh
-echo "✅ Google Drive File Stream Driver installed successfully."
+step "Installing Telegram"
+run sudo snap install telegram-desktop
 
-# Telegram
-echo "📱 Installing Telegram..."
-sudo snap install telegram-desktop 
-echo "✅ Telegram installed successfully."
+step "Installing Docker Desktop"
+run wget https://desktop.docker.com/linux/main/amd64/docker-desktop-x86_64.rpm -O docker-desktop.rpm
+run sudo dnf install -y ./docker-desktop.rpm
 
-# Docker Desktop
-echo "🚢 Installing Docker Desktop..."
-wget https://desktop.docker.com/linux/main/amd64/docker-desktop-x86_64.rpm -O docker-desktop.rpm
-sudo dnf install -y ./docker-desktop.rpm
-echo "✅ Docker Desktop installed successfully."
-
-# Musecore
-echo "🎼 Installing Musecore..."
-wget https://cdn.jsdelivr.net/musescore/v4.6.5/MuseScore-Studio-4.6.5.253511702-x86_64.AppImage
+step "Installing MuseScore"
+run wget https://cdn.jsdelivr.net/musescore/v4.6.5/MuseScore-Studio-4.6.5.253511702-x86_64.AppImage
 chmod +x MuseScore-Studio-4.6.5.253511702-x86_64.AppImage
-./MuseScore-Studio-4.6.5.253511702-x86_64.AppImage install
-echo "✅ Musecore installed successfully."
+run ./MuseScore-Studio-4.6.5.253511702-x86_64.AppImage install
 
-# Linux Dynamic Templates
-echo "📁 Installing Linux Dynamic Templates..."
+step "Installing Linux Dynamic Wallpapers"
 cd /tmp
 rm -rf LinuxDynamicWallpapers
-git clone https://github.com/frjr17/LinuxDynamicWallpapers.git
+run git clone https://github.com/frjr17/LinuxDynamicWallpapers.git
 cd LinuxDynamicWallpapers
-sudo bash ./install.sh
-echo "✅ Linux Dynamic Templates installed successfully."
+run sudo bash ./install.sh
 
-# Thunderbird
-echo "📧 Installing Thunderbird..."
-sudo dnf install -y thunderbird
-echo "✅ Thunderbird installed successfully."
+step "Installing Thunderbird"
+run sudo dnf install -y thunderbird
 
-# Installing mutter update 
-echo "🔄 Installing mutter update..."
-sudo dnf install \
-  $SCRIPT_DIR/mutter-rpms/mutter-50.3-2.1.nightlight.fc44.x86_64.rpm \
-  $SCRIPT_DIR/mutter-rpms/mutter-common-50.3-2.1.nightlight.fc44.noarch.rpm \
-  $SCRIPT_DIR/mutter-rpms/mutter-devel-50.3-2.1.nightlight.fc44.x86_64.rpm
-
-echo "✅ All done! Restart your GNOME session or run: gnome-shell --replace (on X11)"
+step "Exporting desktop configuration"
+say "restart your GNOME session, or run: gnome-shell --replace (on X11)"

@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/log.sh"
+
 # ─────────────────────────────────────────────
 # Constants & Variables
 # ─────────────────────────────────────────────
@@ -23,7 +26,7 @@ while [[ $# -gt 0 ]]; do
     --username) GITHUB_USERNAME="$2"; shift 2 ;;
     --email)    GITHUB_EMAIL="$2";    shift 2 ;;
     -h|--help)  usage ;;
-    *) echo "❌ Unknown option: $1" >&2; usage ;;
+    *) echo "Unknown option: $1" >&2; usage ;;
   esac
 done
 
@@ -31,15 +34,15 @@ done
 prompt_missing() {
   local var="$1" label="$2" flag="${1#GITHUB_}"
   [[ -n "${!var}" ]] && return 0
-  [[ -t 0 ]] || { echo "❌ Missing --${flag,,} and no terminal to prompt." >&2; exit 1; }
+  [[ -t 0 ]] || { echo "Missing --${flag,,} and no terminal to prompt." >&2; exit 1; }
   read -rp "$label: " "$var"
-  [[ -n "${!var}" ]] || { echo "❌ $label is required." >&2; exit 1; }
+  [[ -n "${!var}" ]] || { echo "$label is required." >&2; exit 1; }
 }
 prompt_missing GITHUB_NAME     "Git full name"
 prompt_missing GITHUB_USERNAME "GitHub username"
 prompt_missing GITHUB_EMAIL    "Git email"
 
-FONTS_DIR="./fonts"
+FONTS_DIR="$SCRIPT_DIR/fonts"
 FONTS_DEST="$HOME/.local/share/fonts"
 
 ZSHRC="$HOME/.zshrc"
@@ -49,59 +52,63 @@ P10K_FILE="$HOME/.p10k.zsh"
 # Git Configuration
 # ─────────────────────────────────────────────
 
-echo "🛠️ Setting up Git..."
-git config --global user.name "$GITHUB_NAME"
-git config --global user.username "$GITHUB_USERNAME"
-git config --global user.email "$GITHUB_EMAIL"
+step "Configuring Git identity"
+run git config --global user.name "$GITHUB_NAME"
+run git config --global user.username "$GITHUB_USERNAME"
+run git config --global user.email "$GITHUB_EMAIL"
 
 # ─────────────────────────────────────────────
 # Install Fonts
 # ─────────────────────────────────────────────
 
-echo "📦 Installing fonts from: $FONTS_DIR"
+step "Installing fonts from $FONTS_DIR"
 mkdir -p "$FONTS_DEST"
 
 if [[ -d "$FONTS_DIR" ]]; then
-    unzip -o "$FONTS_DIR/FiraCodeNF.zip" -d "$FONTS_DIR"
-    unzip -o "$FONTS_DIR/OperatorMonoLig.zip" -d "$FONTS_DIR"
+    run unzip -o "$FONTS_DIR/FiraCodeNF.zip" -d "$FONTS_DIR"
+    run unzip -o "$FONTS_DIR/OperatorMonoLig.zip" -d "$FONTS_DIR"
     mv "$FONTS_DIR"/*.ttf "$FONTS_DEST" || true
     mv "$FONTS_DIR"/*.otf "$FONTS_DEST" || true
+    say "installed into $FONTS_DEST"
 else
-    echo "⚠️ Fonts directory '$FONTS_DIR' not found. Skipping fonts installation."
+    cached "fonts directory '$FONTS_DIR' not found; skipping"
 fi
 
 # ─────────────────────────────────────────────
 # Install Packages
 # ─────────────────────────────────────────────
 
-echo "📦 Installing required packages..."
-sudo dnf install -y \
+step "Installing shell and build packages"
+run sudo dnf install -y \
     zsh curl ruby ruby-devel \
     rubygem-{irb,rake,rbs,rexml,typeprof,test-unit} ruby-bundled-gems \
     make automake gcc gcc-c++ kernel-devel
 
-sudo gem install colorls
+step "Installing colorls"
+run sudo gem install colorls
 
 # ─────────────────────────────────────────────
 # Zsh, Oh My Zsh, and Plugins
 # ─────────────────────────────────────────────
 
-echo "🎨 Installing Oh My Zsh and plugins..."
+step "Installing Oh My Zsh"
 export RUNZSH=no
-sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+run sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
 
+step "Installing Zsh theme and plugins"
 ZSH_CUSTOM="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}"
-git clone --depth=1 https://github.com/romkatv/powerlevel10k.git "$ZSH_CUSTOM/themes/powerlevel10k"
-git clone --depth=1 https://github.com/zsh-users/zsh-syntax-highlighting.git "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting"
-git clone --depth=1 https://github.com/zsh-users/zsh-autosuggestions "$ZSH_CUSTOM/plugins/zsh-autosuggestions"
+run git clone --depth=1 https://github.com/romkatv/powerlevel10k.git "$ZSH_CUSTOM/themes/powerlevel10k"
+run git clone --depth=1 https://github.com/zsh-users/zsh-syntax-highlighting.git "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting"
+run git clone --depth=1 https://github.com/zsh-users/zsh-autosuggestions "$ZSH_CUSTOM/plugins/zsh-autosuggestions"
 
 # ─────────────────────────────────────────────
 # Zsh Configuration
 # ─────────────────────────────────────────────
 
-echo "⚙️ Configuring Zsh..."
+step "Configuring $ZSHRC"
 sed -i 's/^plugins=.*/plugins=(git zsh-syntax-highlighting zsh-autosuggestions)/' "$ZSHRC"
 sed -i 's|^ZSH_THEME=.*|ZSH_THEME="powerlevel10k/powerlevel10k"|' "$ZSHRC"
+say "set theme powerlevel10k and plugins (git, syntax-highlighting, autosuggestions)"
 
 cat << 'EOF' >> "$ZSHRC"
 
@@ -158,12 +165,12 @@ outlinepdf() {
   echo "Original backup saved as: $backup"
 }
 EOF
+say "appended aliases and the outlinepdf helper"
 
 # ─────────────────────────────────────────────
 # Set Zsh as Default Shell
 # ─────────────────────────────────────────────
 
-echo "💻 Setting Zsh as default shell for user: $USER"
-chsh -s "$(which zsh)" "$USER"
-
-echo "✅ Setup complete! Restart your terminal or run: exec zsh"
+step "Setting Zsh as the default shell for $USER"
+chsh -s "$(which zsh)" "$USER"   # not wrapped: chsh prompts for your password
+say "restart your terminal or run: exec zsh"

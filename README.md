@@ -20,6 +20,20 @@ Small collection of Bash scripts for setting up a Fedora desktop, configuring GN
 
 - `snapper.sh` — Helpers around `snapper` (Btrfs snapshot management). Provides shortcuts for creating, listing, and cleaning snapshots so you can manage system rollbacks. Run with care on systems using Btrfs.
 
+- `log.sh` — Shared progress output, sourced by every other script. Prints in the same shape as `docker build --progress=plain`, so a run reads as numbered steps with their own timings:
+
+  ```
+  #3 [3/9] Installing Docker CE
+  #3 0.412 Installing: docker-ce  x86_64  28.0.1-1.fc44
+  #3 DONE 8.1s
+  #4 [4/9] Ensuring pipx is available
+  #4 0.002 pipx already installed
+  #4 CACHED
+  [+] Building 45.2s (9/9) FINISHED
+  ```
+
+  A failing step ends the run with the docker-style `ERROR: failed to solve: <step>: exit code N` block. `test_log.sh` checks both shapes — run it after touching `log.sh`.
+
 - `fonts/` — Local font archives referenced by the shell setup. Place required font ZIPs here so `favoriteShell.sh` can install them.
 
 - Other scripts (one-off helpers) — Review each script's header comments for usage examples and options before running. Many scripts expect to be executed from the repository root.
@@ -89,7 +103,7 @@ It **never** disables SELinux, and only _reports_ disk-encryption and Secure Boo
 --force                           # re-init AIDE db even if one exists
 ```
 
-Idempotent — safe to re-run any time; already-correct items print `[ok]`. Edited configs are backed up to `<file>.bak-<timestamp>` and listed at the end. Everything is logged to `/var/log/fedora-harden.log`.
+Idempotent — safe to re-run any time; already-correct items print `CACHED`. Edited configs are backed up to `<file>.bak-<timestamp>` and listed at the end. Everything is logged to `/var/log/fedora-harden.log`.
 
 Maintenance rhythm:
 

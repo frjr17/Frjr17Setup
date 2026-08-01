@@ -16,7 +16,7 @@
 #
 # Design rules baked in:
 #   * Dry-run is the default. Nothing changes without --apply.
-#   * Idempotent: every step checks current state first and prints "[ok]" if
+#   * Idempotent: every step checks current state first and prints "CACHED" if
 #     already correct instead of reapplying.
 #   * Never disables SELinux, never touches disk encryption or Secure Boot
 #     (those are detect-and-report only — they need a reinstall / firmware).
@@ -43,6 +43,9 @@
 
 set -Eeuo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/log.sh"   # BuildKit-style output: step / run / say / warn
+
 # ---------------------------------------------------------------------------
 # Globals
 # ---------------------------------------------------------------------------
@@ -68,16 +71,10 @@ LUKS_STATUS="unknown"
 SB_STATUS="unknown"
 SELINUX_STATUS="unknown"
 
-# Colors (only when stdout is a terminal)
-if [[ -t 1 ]]; then
-    C_RED=$'\033[31m'; C_GRN=$'\033[32m'; C_YLW=$'\033[33m'
-    C_BLU=$'\033[34m'; C_BLD=$'\033[1m';  C_RST=$'\033[0m'
-else
-    C_RED='' C_GRN='' C_YLW='' C_BLU='' C_BLD='' C_RST=''
-fi
-
 # ---------------------------------------------------------------------------
-# Small helpers — every message goes through these so the log stays complete
+# Small helpers — every message goes through these so the log stays complete.
+# Output shape comes from log.sh (docker --progress=plain); these add the
+# logfile append and the summary bookkeeping on top.
 # ---------------------------------------------------------------------------
 
 # Append a timestamped line to the logfile (once it exists).
@@ -85,13 +82,16 @@ log() {
     (( LOG_READY )) && printf '%s %s\n' "$(date '+%F %T')" "$*" >> "$LOG_FILE" || true
 }
 
-info()  { echo "${C_BLU}::${C_RST} $*";                log ":: $*"; }
-ok()    { echo "${C_GRN}[ok]${C_RST} $*";              log "[ok] $*";   ALREADY_OK+=("$*"); }
-did()   { echo "${C_GRN}[changed]${C_RST} $*";         log "[changed] $*"; CHANGED+=("$*"); }
-warn()  { echo "${C_YLW}[warn]${C_RST} $*" >&2;        log "[warn] $*"; }
-err()   { echo "${C_RED}[error]${C_RST} $*" >&2;       log "[error] $*"; }
+info()  { say  "$*";              log ":: $*"; }
+ok()    { say  "CACHED $*";       log "[ok] $*";      ALREADY_OK+=("$*"); }
+did()   { say  "CHANGED $*";      log "[changed] $*"; CHANGED+=("$*"); }
+warn()  { say  "WARN: $*" >&2;    log "[warn] $*"; }
+err()   { say  "ERROR: $*" >&2;   log "[error] $*"; }
 die()   { err "$*"; exit 1; }
-header(){ echo; echo "${C_BLD}=== $* ===${C_RST}";     log "=== $* ==="; }
+header(){ step "$*";              log "=== $* ==="; }
+
+# Indent piped-in output under the current step, keeping the #N prefix.
+say_lines() { local l; while IFS= read -r l || [[ -n $l ]]; do say "  $l"; done; }
 
 # ERR trap: report the failing line loudly. set -E makes it fire in functions.
 on_error() {
@@ -103,15 +103,15 @@ trap 'on_error $LINENO $?' ERR
 # runs and tees output into the log. Read-only probes call commands directly.
 run_cmd() {
     if (( DRY_RUN )); then
-        echo "${C_YLW}[dry-run]${C_RST} would run: $*"
+        say "would run: $*"
         log "[dry-run] would run: $*"
         return 0
     fi
     log "running: $*"
     if (( LOG_READY )); then
-        "$@" 2>&1 | tee -a "$LOG_FILE"
+        run "$@" | tee -a "$LOG_FILE"
     else
-        "$@"
+        run "$@"
     fi
 }
 
@@ -120,7 +120,7 @@ backup_file() {
     local f=$1 b
     b="$f.bak-$RUN_STAMP"
     if (( DRY_RUN )); then
-        echo "${C_YLW}[dry-run]${C_RST} would back up $f -> $b"
+        say "would back up $f -> $b"
         return 0
     fi
     sudo cp -a "$f" "$b"
@@ -133,7 +133,7 @@ backup_file() {
 # ALWAYS prompt, even under --yes.
 ask() {
     local prompt=$1 reply
-    read -r -p "${C_BLD}${prompt} [y/N]${C_RST} " reply < /dev/tty
+    read -r -p "$prompt [y/N] " reply < /dev/tty
     log "prompt: '$prompt' -> '$reply'"
     [[ $reply =~ ^[Yy]([Ee][Ss])?$ ]]
 }
@@ -198,9 +198,9 @@ section_report() {
     info "firewall state: $(sudo firewall-cmd --state 2>&1 || true)"
     info "default zone:   $(sudo firewall-cmd --get-default-zone 2>/dev/null || echo '?')"
     info "active zones:"
-    sudo firewall-cmd --get-active-zones 2>/dev/null | sed 's/^/    /' || true
+    sudo firewall-cmd --get-active-zones 2>/dev/null | say_lines || true
     info "current zone rules:"
-    sudo firewall-cmd --list-all 2>/dev/null | sed 's/^/    /' || true
+    sudo firewall-cmd --list-all 2>/dev/null | say_lines || true
 
     # --- SELinux: verify, never "fix". Weakening anything to quiet SELinux
     # warnings is exactly backwards; if it's not Enforcing, the user must fix
@@ -317,7 +317,7 @@ section_firewall() {
             # Verify the active interface actually moved to the new zone.
             # NM connections with no explicit zone follow the default.
             info "active zones after change:"
-            sudo firewall-cmd --get-active-zones | sed 's/^/    /'
+            sudo firewall-cmd --get-active-zones | say_lines
             if sudo firewall-cmd --get-active-zones | grep -q '^public'; then
                 info "verified: an interface is now in 'public'"
             else
@@ -366,7 +366,7 @@ section_audit() {
     # Adjust this list to taste.
     local skip_ids='BANN-|AUTH-9286|AUTH-9328|FILE-6310|LOGG-2154|ACCT-|STRG-1840|KRNL-6000|HRDN-7222'
     info "suggestions relevant to a single-user laptop:"
-    grep -E '^\s*\*' "$out" | grep -vE "$skip_ids" | sed 's/^/    /' || info "    (none)"
+    grep -E '^\s*\*' "$out" | grep -vE "$skip_ids" | say_lines || info "    (none)"
     info "intentionally-skipped suggestion IDs: $skip_ids (see script header for why)"
 }
 
@@ -421,11 +421,11 @@ section_rkhunter() {
 
     if [[ -n $expected ]]; then
         info "expected/benign warnings (package users, Docker/snap /dev entries):"
-        echo "$expected" | sed 's/^/    /'
+        echo "$expected" | say_lines
     fi
     if [[ -n $unexpected ]]; then
         warn "UNEXPECTED warnings — review these:"
-        echo "$unexpected" | sed 's/^/    /'
+        echo "$unexpected" | say_lines
     else
         info "no unexpected warnings"
     fi
@@ -573,46 +573,45 @@ EOF
 # Final summary
 # ---------------------------------------------------------------------------
 print_summary() {
-    header "SUMMARY"
+    header "exporting summary"
     (( DRY_RUN )) && warn "DRY RUN — nothing was changed. Re-run with --apply to make changes."
 
     if (( ${#CHANGED[@]} )); then
-        echo "${C_BLD}Changed:${C_RST}"
-        local c; for c in "${CHANGED[@]}"; do echo "  ${C_GRN}+${C_RST} $c"; log "summary changed: $c"; done
+        say "Changed:"
+        local c; for c in "${CHANGED[@]}"; do say "  + $c"; log "summary changed: $c"; done
     else
-        echo "${C_BLD}Changed:${C_RST} nothing"
+        say "Changed: nothing"
     fi
 
     if (( ${#ALREADY_OK[@]} )); then
-        echo "${C_BLD}Already correct:${C_RST}"
-        local o; for o in "${ALREADY_OK[@]}"; do echo "  = $o"; done
+        say "Already correct:"
+        local o; for o in "${ALREADY_OK[@]}"; do say "  = $o"; done
     fi
 
     if (( ${#BACKUPS[@]} )); then
-        echo "${C_BLD}Backups made:${C_RST}"
-        local b; for b in "${BACKUPS[@]}"; do echo "  $b"; done
+        say "Backups made:"
+        local b; for b in "${BACKUPS[@]}"; do say "  $b"; done
     else
-        echo "${C_BLD}Backups made:${C_RST} none"
+        say "Backups made: none"
     fi
 
-    echo "${C_BLD}Manual follow-ups (this script will not touch these):${C_RST}"
+    say "Manual follow-ups (this script will not touch these):"
     if (( ${#MANUAL_FOLLOWUPS[@]} )); then
-        local m; for m in "${MANUAL_FOLLOWUPS[@]}"; do echo "  ${C_YLW}!${C_RST} $m"; done
+        local m; for m in "${MANUAL_FOLLOWUPS[@]}"; do say "  ! $m"; done
     else
-        echo "  disk encryption: $LUKS_STATUS"
-        echo "  Secure Boot:     $SB_STATUS"
-        echo "  (both look fine)"
+        say "  disk encryption: $LUKS_STATUS"
+        say "  Secure Boot:     $SB_STATUS"
+        say "  (both look fine)"
     fi
 
     if (( ${#BREAKAGE_NOTES[@]} )); then
-        echo "${C_BLD}May now behave differently (and how to reverse):${C_RST}"
-        local n; for n in "${BREAKAGE_NOTES[@]}"; do echo "  ${C_YLW}*${C_RST} $n"; done
+        say "May now behave differently (and how to reverse):"
+        local n; for n in "${BREAKAGE_NOTES[@]}"; do say "  * $n"; done
     fi
 
-    echo
-    echo "${C_BLD}Maintenance rhythm:${C_RST}"
-    echo "  before updating:  sec-check       (verify nothing is off first)"
-    echo "  after updating:   sec-rebaseline  (accept the new files as trusted)"
+    say "Maintenance rhythm:"
+    say "  before updating:  sec-check       (verify nothing is off first)"
+    say "  after updating:   sec-rebaseline  (accept the new files as trusted)"
     log "===== run complete ====="
 }
 
@@ -656,12 +655,19 @@ main() {
 
     (( DRY_RUN )) && warn "dry-run mode (default): showing what WOULD change. Use --apply to do it."
 
+    # Step count for the "#3 [3/9] ..." prefixes: the two always-on sections,
+    # whatever --only/--skip leaves, plus the summary.
+    local sec
+    BK_TOTAL=3
+    for sec in updates firewall audit rkhunter aide services helpers; do
+        section_wanted "$sec" && BK_TOTAL=$(( BK_TOTAL + 1 ))
+    done
+
     # preflight and report always run: they're read-only and everything else
     # depends on the state they establish (sudo, logfile, status globals).
     section_preflight
     section_report
 
-    local sec
     for sec in updates firewall audit rkhunter aide services helpers; do
         if ! section_wanted "$sec"; then
             info "skipping section: $sec"
