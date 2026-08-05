@@ -29,12 +29,3 @@ git clone --depth=1 https://github.com/frjr17/WhiteSurGtkTheme.git "${WORK_DIR}/
   flatpak override --user --filesystem=xdg-config/gtk-4.0:ro --filesystem=xdg-config/gtk-3.0:ro
   gsettings set org.gnome.desktop.interface gtk-theme "WhiteSur-Dark-purple"
 )
-
-screen_resolution="$("${REPO_DIR}/screen-res.sh")"
-echo "Your screen resolution variant is ${screen_resolution}"
-
-git clone --depth=1 https://github.com/frjr17/WhiteSurWallpapers.git "${WORK_DIR}/WhiteSurWallpapers"
-(
-  cd "${WORK_DIR}/WhiteSurWallpapers"
-  ./install-gnome-backgrounds.sh -t whitesur -s "${screen_resolution}"
-)

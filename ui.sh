@@ -12,6 +12,16 @@ step "Updating system packages"
 run sudo dnf update -y
 
 # ─────────────────────────────────────────────
+# Update system
+# ─────────────────────────────────────────────
+step "Installing snap"
+run sudo dnf install snapd -y
+run sudo ln -s /var/lib/snapd/snap /snap
+run sudo systemctl enable --now snapd.socket
+run sudo systemctl restart snapd.socket snapd.seeded.service
+run sudo snap wait system seed.loaded
+
+# ─────────────────────────────────────────────
 # Installing Multimedia codecs and drivers
 # ─────────────────────────────────────────────
 
@@ -50,14 +60,18 @@ run sudo dnf install -y ./docker-desktop.rpm
 # Installing apps (flatpak)
 # ─────────────────────────────────────────────
 
-step "Installing Spotify"
-run flatpak install flathub com.spotify.Client -y
-
 step "Installing Telegram"
 run flatpak install flathub org.telegram.desktop -y
 
 step "Installing Muse Score"
 run flatpak install flathub org.musescore.MuseScore -y
+
+# ─────────────────────────────────────────────
+# Installing apps (snap)
+# ─────────────────────────────────────────────
+
+step "Installing Spotify"
+run sudo snap install spotify
 
 step "Exporting desktop configuration"
 say "restart your GNOME session, or run: gnome-shell --replace (on X11)"
