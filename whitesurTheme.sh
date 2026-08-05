@@ -11,13 +11,30 @@ source "$SCRIPT_DIR/log.sh"
 step "Updating system packages"
 run sudo dnf update -y
 
-# Entering temporary directory for all operations
-cd /tmp
+REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
+readonly REPO_DIR
+WORK_DIR="$(mktemp -d)"
+trap 'rm -rf -- "${WORK_DIR}"' EXIT
 
-step "Installing the WhiteSur theme"
-rm -rf WhiteSurInstaller   # rerun-safe: clone aborts under set -e if the dir exists
-run git clone https://github.com/frjr17/WhiteSurInstaller.git
-cd ./WhiteSurInstaller
+git clone --depth=1 https://github.com/frjr17/WhiteSurCursors.git "${WORK_DIR}/WhiteSurCursors"
+(cd "${WORK_DIR}/WhiteSurCursors" && ./install.sh)
 
-chmod +x ./*.sh
-run ./install.sh
+git clone --depth=1 https://github.com/frjr17/WhiteSurIconTheme.git "${WORK_DIR}/WhiteSurIconTheme"
+(cd "${WORK_DIR}/WhiteSurIconTheme" && ./install.sh)
+
+git clone --depth=1 https://github.com/frjr17/WhiteSurGtkTheme.git "${WORK_DIR}/WhiteSurGtkTheme"
+(
+  cd "${WORK_DIR}/WhiteSurGtkTheme"
+  ./install.sh --fullblack -c dark -t purple -l      
+  flatpak override --user --filesystem=xdg-config/gtk-4.0:ro --filesystem=xdg-config/gtk-3.0:ro
+  gsettings set org.gnome.desktop.interface gtk-theme "WhiteSur-Dark-purple"
+)
+
+screen_resolution="$("${REPO_DIR}/screen-res.sh")"
+echo "Your screen resolution variant is ${screen_resolution}"
+
+git clone --depth=1 https://github.com/frjr17/WhiteSurWallpapers.git "${WORK_DIR}/WhiteSurWallpapers"
+(
+  cd "${WORK_DIR}/WhiteSurWallpapers"
+  ./install-gnome-backgrounds.sh -t whitesur -s "${screen_resolution}"
+)
