@@ -26,6 +26,7 @@ git clone --depth=1 https://github.com/frjr17/WhiteSurGtkTheme.git "${WORK_DIR}/
 (
   cd "${WORK_DIR}/WhiteSurGtkTheme"
   ./install.sh --fullblack -c dark -t purple -l      
+  sudo ./tweaks.sh -g -p 60
   flatpak override --user --filesystem=xdg-config/gtk-4.0:ro --filesystem=xdg-config/gtk-3.0:ro
   gsettings set org.gnome.desktop.interface gtk-theme "WhiteSur-Dark-purple"
 )
