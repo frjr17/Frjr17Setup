@@ -28,21 +28,21 @@ run sudo dnf upgrade --refresh
 run sudo dnf install -y intel-media-driver libva-utils libavcodec-freeworld
 
 # ─────────────────────────────────────────────
-# Installing apps
+# Installing apps (dnf)
 # ─────────────────────────────────────────────
-
-step "Installing Snapd"
-run sudo dnf install snapd -y
-sudo ln -s /var/lib/snapd/snap /snap || say "/snap symlink already present"
 
 step "Installing LibreOffice"
 run sudo dnf install -y libreoffice
 
+step "Installing Thunderbird"
+run sudo dnf install -y thunderbird
+
+step "Installing Muse Sounds Manager"
+run wget https://muse-cdn.com/Muse_Sounds_Manager_x64.rpm
+run sudo dnf install Muse_Sounds_Manager_x64.rpm
+
 step "Installing Brave"
 run bash -c 'curl -fsS https://dl.brave.com/install.sh | sh'
-
-step "Installing Spotify"
-run sudo snap install spotify
 
 step "Installing Visual Studio Code"
 run sudo rpm --import https://packages.microsoft.com/keys/microsoft.asc
@@ -50,31 +50,22 @@ printf '[code]\nname=Visual Studio Code\nbaseurl=https://packages.microsoft.com/
 run sudo dnf check-update || true   # exits 100 when updates are available
 run sudo dnf install -y code
 
-step "Installing the Google Drive File Stream driver"
-run sudo dnf copr enable fluhus/gnome-googledrive
-run sudo dnf update --refresh
-
-step "Installing Telegram"
-run sudo snap install telegram-desktop
-
 step "Installing Docker Desktop"
 run wget https://desktop.docker.com/linux/main/amd64/docker-desktop-x86_64.rpm -O docker-desktop.rpm
 run sudo dnf install -y ./docker-desktop.rpm
 
-step "Installing MuseScore"
-run wget https://cdn.jsdelivr.net/musescore/v4.6.5/MuseScore-Studio-4.6.5.253511702-x86_64.AppImage
-chmod +x MuseScore-Studio-4.6.5.253511702-x86_64.AppImage
-run ./MuseScore-Studio-4.6.5.253511702-x86_64.AppImage install
+# ─────────────────────────────────────────────
+# Installing apps (flatpak)
+# ─────────────────────────────────────────────
 
-step "Installing Linux Dynamic Wallpapers"
-cd /tmp
-rm -rf LinuxDynamicWallpapers
-run git clone https://github.com/frjr17/LinuxDynamicWallpapers.git
-cd LinuxDynamicWallpapers
-run sudo bash ./install.sh
+step "Installing Spotify"
+run flatpak install flathub com.spotify.Client -y
 
-step "Installing Thunderbird"
-run sudo dnf install -y thunderbird
+step "Installing Telegram"
+run flatpak install flathub org.telegram.desktop -y
+
+step "Installing Muse Score"
+run flatpak install flathub org.musescore.MuseScore -y
 
 step "Exporting desktop configuration"
 say "restart your GNOME session, or run: gnome-shell --replace (on X11)"
