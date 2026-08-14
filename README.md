@@ -6,7 +6,7 @@ Every script is idempotent and runs unattended — see [🤖 Unattended runs](#-
 
 ## 📦 What's Inside
 
-- `setup.sh` — **Start here.** Runs the provisioning scripts in dependency order, unattended. A stage that fails doesn't stop the rest; failures are listed at the end and fixed by re-running. Deliberately excludes `fedoraHarden.sh`, `googleDrive.sh` and `snapper.sh` — see its header for why.
+- `setup.sh` — **Start here.** Runs the provisioning scripts in dependency order, unattended. A stage that fails doesn't stop the rest; failures are listed at the end and fixed by re-running. Deliberately excludes `fedoraHarden.sh` and `googleDrive.sh` — see its header for why.
 
 - `gnomeSettings.sh` — Enables the RPM Fusion repositories, then applies GNOME keyboard shortcuts (monitor/workspace movement, `Super+E` for the file explorer, `Super+N` for the message tray) and lid-close/power-button behavior via `gsettings` and `logind.conf.d`. Must run before `apps.sh`, which needs RPM Fusion.
 
@@ -26,7 +26,7 @@ Every script is idempotent and runs unattended — see [🤖 Unattended runs](#-
 
 - `fedoraHarden.sh` — Security hardening baseline for a personal Fedora Workstation laptop (single user, GNOME, developer machine). Dry-run by default; see [🔐 Hardening](#-hardening) below.
 
-- `snapper.sh` — Helpers around `snapper` (Btrfs snapshot management). Provides shortcuts for creating, listing, and cleaning snapshots so you can manage system rollbacks. Run with care on systems using Btrfs.
+- `snapper.sh` — Sets up Btrfs snapshots so the rest of the provision is reversible: installs `snapper` and `btrfs-assistant`, adds the DNF plugin that takes a pre/post snapshot around every transaction, creates the `root` and `home` configs, installs `grub-btrfs` (patched for Fedora's grub2 paths) so snapshots appear in the boot menu, and enables the timeline and cleanup timers. **Btrfs only.** `setup.sh` runs it first, before anything else installs packages.
 
 - `log.sh` — Shared progress output, sourced by every other script. Prints in the same shape as `docker build --progress=plain`, so a run reads as numbered steps with their own timings:
 
@@ -68,18 +68,26 @@ Some scripts also expect tools such as `zsh`, `pipx`, `flatpak`, `snap`, `gnome-
 Provision everything in the right order:
 
 ```bash
-sudo -v
+./setup.sh
+```
+
+It asks for your Git identity and your sudo password up front, then runs for
+roughly 40 minutes without needing you. Pre-set any of the three to skip that
+question:
+
+```bash
 GITHUB_NAME="Jane Doe" GITHUB_USERNAME=janedoe GITHUB_EMAIL=jane@example.com ./setup.sh
 ```
 
 Or run any script on its own, from the repository root:
 
 ```bash
-./gnomeSettings.sh   # RPM Fusion + GNOME keybindings  (before apps.sh)
+./snapper.sh         # Btrfs snapshots                  (first — makes the rest reversible)
+./gnomeSettings.sh   # RPM Fusion + GNOME keybindings   (before apps.sh)
 ./apps.sh            # desktop applications
 ./favoriteShell.sh   # Zsh, Oh My Zsh, fonts, Git identity
 ./dev.sh             # Node, Docker
-./whitesurTheme.sh   # GTK theme                       (before gnomeExtensions.sh)
+./whitesurTheme.sh   # GTK theme                        (before gnomeExtensions.sh)
 ./gnomeExtensions.sh # GNOME Shell extensions
 ```
 
@@ -92,7 +100,9 @@ The scripts are built to be started and walked away from:
 - **`NONINTERACTIVE=1`** makes every prompt take its safe default: `googleDrive.sh` skips its baseline confirmation, `fedoraHarden.sh` answers *No* to each service disable, and `favoriteShell.sh` requires the Git identity up front rather than asking. `setup.sh` sets it for you.
 - **Sudo fails fast.** Under `NONINTERACTIVE=1`, a script needing sudo without a cached timestamp exits at once telling you to run `sudo -v` — it never blocks. Once claimed, a background refresh keeps it alive so a long `dnf` step can't cause a second prompt.
 
-So the unattended contract is: run `sudo -v`, then start the script.
+`setup.sh` front-loads both of those: it collects the Git identity and calls `sudo -v` in its preamble, then sets `NONINTERACTIVE=1` for every stage. So a full provision asks its questions in the first ten seconds and nothing after.
+
+Running a single script directly instead? `favoriteShell.sh` prompts for whatever identity it's missing, also before doing any work. Everything else needs only a cached sudo timestamp — `sudo -v`, then start it.
 
 ## 📝 Notes
 
