@@ -8,9 +8,11 @@ Every script is idempotent and runs unattended — see [🤖 Unattended runs](#-
 
 - `setup.sh` — **Start here.** Runs the provisioning scripts in dependency order, unattended. A stage that fails doesn't stop the rest; failures are listed at the end and fixed by re-running. Deliberately excludes `fedoraHarden.sh` and `googleDrive.sh` — see its header for why.
 
-- `gnomeSettings.sh` — Enables the RPM Fusion repositories, then applies GNOME keyboard shortcuts (monitor/workspace movement, `Super+E` for the file explorer, `Super+N` for the message tray) and lid-close/power-button behavior via `gsettings` and `logind.conf.d`. Must run before `apps.sh`, which needs RPM Fusion.
+- `gnomeSettings.sh` — Enables the RPM Fusion repositories, then applies the GNOME desktop configuration: keyboard shortcuts (monitor/workspace movement, `Super+E` for the file explorer, `Super+N` for the message tray), the dock contents, the app grid folders, and lid-close/power-button behavior. Must run before `apps.sh`, which needs RPM Fusion.
 
-- `apps.sh` — Installs the desktop applications: snapd, multimedia codecs, LibreOffice, Thunderbird, Muse Sounds, Brave, VS Code, Docker Desktop, Telegram, MuseScore, Spotify. The two third-party direct downloads (Muse Sounds, Docker Desktop) warn and continue if their URL has gone stale.
+  The dock is GNOME's `favorite-apps` list and the grid folders are `org.gnome.desktop.app-folders` — both are plain `gsettings` keys, so editing the lists in the script is all it takes to rearrange them. Favourites naming an app that isn't installed yet are ignored by the shell and appear on their own once it is, which is why this can run before `apps.sh` and `bravePwa.sh`.
+
+- `apps.sh` — Installs the desktop applications: snapd, multimedia codecs, LibreOffice, Thunderbird, Muse Sounds, Brave, VS Code, Docker Desktop, Telegram, MuseScore, Discord, Spotify — and removes the preinstalled Firefox. The two third-party direct downloads (Muse Sounds, Docker Desktop) warn and continue if their URL has gone stale.
 
 - `dev.sh` — Bootstraps a development environment: Vim, `nvm` + Node LTS, the repo's `.npmrc`, and Docker CE (replacing the distro packages).
 

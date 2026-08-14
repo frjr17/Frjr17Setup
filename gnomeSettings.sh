@@ -72,6 +72,69 @@ case $bound in
 esac
 
 # ─────────────────────────────────────────────
+# Dock
+# ─────────────────────────────────────────────
+
+# The dock is just GNOME's favourites list. Entries whose .desktop file isn't
+# installed yet are ignored by the shell and appear on their own once the app
+# lands — so this is safe to set before apps.sh and bravePwa.sh have run.
+# Order here is the left-to-right order in the dock.
+step "Setting the dock favourites"
+run gsettings set org.gnome.shell favorite-apps "[
+  'brave-browser.desktop',
+  'brave-pwa-whatsapp.desktop',
+  'org.telegram.desktop.desktop',
+  'brave-pwa-notion.desktop',
+  'brave-pwa-work-whatsapp.desktop',
+  'spotify_spotify.desktop',
+  'net.thunderbird.Thunderbird.desktop',
+  'org.musescore.MuseScore.desktop',
+  'brave-pwa-chatgpt.desktop',
+  'brave-pwa-claude.desktop',
+  'org.gnome.TextEditor.desktop'
+]"
+
+# ─────────────────────────────────────────────
+# App grid folders
+# ─────────────────────────────────────────────
+
+step "Setting the app grid folders"
+
+# <id> <name> <translate> <apps>. translate=true means the name is a .directory
+# file GNOME localises; a literal folder name uses false.
+app_folder() {
+  local path="org.gnome.desktop.app-folders.folder:/org/gnome/desktop/app-folders/folders/$1/"
+  run gsettings set "$path" name "$2"
+  run gsettings set "$path" translate "$3"
+  run gsettings set "$path" apps "$4"
+}
+
+# Fedora ships empty YaST and Pardus folders in this list for other distros;
+# they are dropped here rather than carried along.
+run gsettings set org.gnome.desktop.app-folders folder-children "['Utilities', 'System', 'Office']"
+
+app_folder Utilities 'X-GNOME-Shell-Utilities.directory' true "[
+  'org.gnome.Decibels.desktop', 'org.gnome.Connections.desktop', 'org.gnome.Papers.desktop',
+  'org.gnome.font-viewer.desktop', 'org.gnome.Loupe.desktop', 'org.gnome.Snapshot.desktop',
+  'org.gnome.Characters.desktop', 'org.gnome.Showtime.desktop', 'org.fedoraproject.MediaWriter.desktop',
+  'org.gnome.Contacts.desktop', 'org.gnome.clocks.desktop', 'org.gnome.Maps.desktop',
+  'org.gnome.SimpleScan.desktop', 'org.gnome.Calculator.desktop', 'org.gnome.Software.desktop',
+  'org.gnome.Calendar.desktop', 'org.gnome.Nautilus.desktop'
+]"
+
+app_folder System 'X-GNOME-Shell-System.directory' true "[
+  'org.gnome.baobab.desktop', 'org.gnome.DiskUtility.desktop', 'org.gnome.Logs.desktop',
+  'org.freedesktop.MalcontentControl.desktop', 'org.gnome.SystemMonitor.desktop',
+  'org.gnome.Weather.desktop', 'org.gnome.Settings.desktop', 'btrfs-assistant.desktop',
+  'org.gnome.Tour.desktop', 'org.gnome.Yelp.desktop', 'org.gnome.tweaks.desktop'
+]"
+
+app_folder Office 'Office' false "[
+  'libreoffice-impress.desktop', 'libreoffice-calc.desktop', 'libreoffice-writer.desktop',
+  'libreoffice-base.desktop', 'libreoffice-draw.desktop', 'libreoffice-math.desktop'
+]"
+
+# ─────────────────────────────────────────────
 # Display Behavior
 # ─────────────────────────────────────────────
 

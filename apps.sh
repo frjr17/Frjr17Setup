@@ -31,6 +31,18 @@ run sudo dnf upgrade --refresh -y
 run sudo dnf install -y intel-media-driver libva-utils libavcodec-freeworld
 
 # ─────────────────────────────────────────────
+# Removing preinstalled apps we don't use
+# ─────────────────────────────────────────────
+
+step "Removing Firefox"
+if rpm -q firefox >/dev/null 2>&1; then
+  run sudo dnf remove -y firefox firefox-langpacks
+  say "removed Firefox; Brave is the browser on this machine"
+else
+  cached "Firefox is not installed"
+fi
+
+# ─────────────────────────────────────────────
 # Installing apps (dnf)
 # ─────────────────────────────────────────────
 
@@ -81,6 +93,12 @@ run flatpak install flathub org.telegram.desktop -y
 
 step "Installing Muse Score"
 run flatpak install flathub org.musescore.MuseScore -y
+
+# Flatpak rather than RPM Fusion's `discord`: Discord refuses to start on an
+# outdated client, and the Flathub build tracks upstream more closely than the
+# RPM does. Swap to `dnf install -y discord` if you'd rather it be an rpm.
+step "Installing Discord"
+run flatpak install flathub com.discordapp.Discord -y
 
 # ─────────────────────────────────────────────
 # Installing apps (snap)
