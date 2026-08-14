@@ -1,0 +1,160 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Hernan Valencia <hernanadrianv17@gmail.com>
+Date: Fri, 14 Aug 2026 11:30:42 -0500
+Subject: [PATCH] color: Coalesce generated device profile requests
+
+Two identical monitors are separate MetaColorDevice objects, but their
+generated profile key is equal when vendor, product and serial match
+(including empty or placeholder serials). The second request was rejected
+with "Profile generation already in progress", so that device finished
+initialization without a device profile and never ran update_white_point(),
+leaving its CRTC without a Night Light gamma LUT.
+
+Turn pending_device_profiles into a map of profile key to the list of
+waiting tasks: the first request starts generation once, equal concurrent
+requests join it, and the result (or the error) is handed to every waiter.
+Generation now runs on the store's cancellable so cancelling one waiter
+cancels only that waiter.
+---
+ src/backends/meta-color-store.c | 81 ++++++++++++++++++++++++---------
+ 1 file changed, 60 insertions(+), 21 deletions(-)
+
+diff --git a/src/backends/meta-color-store.c b/src/backends/meta-color-store.c
+index 5189f71..a37f2a8 100644
+--- a/src/backends/meta-color-store.c
++++ b/src/backends/meta-color-store.c
+@@ -441,7 +441,8 @@ meta_color_store_new (MetaColorManager *color_manager)
+   color_store->device_profiles =
+     g_hash_table_new_full (g_str_hash, g_str_equal, g_free, g_object_unref);
+   color_store->pending_device_profiles =
+-    g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
++    g_hash_table_new_full (g_str_hash, g_str_equal, g_free,
++                           (GDestroyNotify) g_ptr_array_unref);
+   color_store->pending_local_profiles =
+     g_hash_table_new_full (g_str_hash, g_str_equal, g_free, g_object_unref);
+ 
+@@ -464,28 +465,50 @@ on_profile_generated (GObject      *source_object,
+                       gpointer      user_data)
+ {
+   MetaColorDevice *color_device = META_COLOR_DEVICE (source_object);
+-  g_autoptr (GTask) task = G_TASK (user_data);
++  EnsureDeviceProfileData *data = user_data;
++  MetaColorStore *color_store = data->color_store;
++  g_autoptr (MetaColorProfile) color_profile = NULL;
+   g_autoptr (GError) error = NULL;
+-  MetaColorProfile *color_profile;
++  g_autofree char *key = NULL;
++  g_autoptr (GPtrArray) tasks = NULL;
++  unsigned int i;
+ 
+   color_profile = meta_color_device_generate_profile_finish (color_device,
+                                                              res,
+                                                              &error);
+-  if (!color_profile)
++
++  if (!g_hash_table_steal_extended (color_store->pending_device_profiles,
++                                    data->key,
++                                    (gpointer *) &key,
++                                    (gpointer *) &tasks))
+     {
+-      if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
++      ensure_device_profile_data_free (data);
++      return;
++    }
++
++  for (i = 0; i < tasks->len; i++)
++    {
++      GTask *task = g_ptr_array_index (tasks, i);
++
++      if (color_profile)
+         {
+-          g_task_return_error (task, g_steal_pointer (&error));
+-          return;
++          g_task_return_pointer (task,
++                                 g_object_ref (color_profile),
++                                 g_object_unref);
++        }
++      else if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
++        {
++          g_task_return_error (task, g_error_copy (error));
++        }
++      else
++        {
++          g_task_return_new_error (task, G_IO_ERROR, G_IO_ERROR_FAILED,
++                                   "Failed to generate and read ICC profile: %s",
++                                   error->message);
+         }
+-
+-      g_task_return_new_error (task, G_IO_ERROR, G_IO_ERROR_FAILED,
+-                               "Failed to generate and read ICC profile: %s",
+-                               error->message);
+-      return;
+     }
+ 
+-  g_task_return_pointer (task, color_profile, g_object_unref);
++  ensure_device_profile_data_free (data);
+ }
+ 
+ gboolean
+@@ -501,7 +524,9 @@ meta_color_store_ensure_device_profile (MetaColorStore      *color_store,
+   g_autofree char *file_name = NULL;
+   g_autofree char *file_path = NULL;
+   EnsureDeviceProfileData *data;
++  EnsureDeviceProfileData *generate_data;
+   MetaColorProfile *color_profile;
++  GPtrArray *tasks;
+ 
+   monitor = meta_color_device_get_monitor (color_device);
+   edid_checksum_md5 = meta_monitor_get_edid_checksum_md5 (monitor);
+@@ -530,20 +555,36 @@ meta_color_store_ensure_device_profile (MetaColorStore      *color_store,
+       return TRUE;
+     }
+ 
+-  if (g_hash_table_contains (color_store->pending_device_profiles, data->key))
++  /* Two identical monitors are distinct color devices, but share a generated
++   * profile key. Let the second request join the first one's generation
++   * instead of failing, so both devices get a profile - and a Night Light
++   * gamma LUT - out of the single ICC file being generated.
++   */
++  tasks = g_hash_table_lookup (color_store->pending_device_profiles, data->key);
++  if (tasks)
+     {
+-      g_task_return_new_error (task, G_IO_ERROR, G_IO_ERROR_FAILED,
+-                               "Profile generation already in progress");
++      g_ptr_array_add (tasks, g_steal_pointer (&task));
+       return TRUE;
+     }
+ 
+-  g_hash_table_add (color_store->pending_device_profiles, g_strdup (data->key));
++  tasks = g_ptr_array_new_with_free_func (g_object_unref);
++  g_ptr_array_add (tasks, g_object_ref (task));
++  g_hash_table_insert (color_store->pending_device_profiles,
++                       g_strdup (data->key),
++                       tasks);
+ 
++  generate_data = g_new0 (EnsureDeviceProfileData, 1);
++  generate_data->color_store = color_store;
++  generate_data->key = g_strdup (data->key);
++
++  /* The generation is shared, so it outlives any single waiter's cancellable;
++   * cancelling one waiter still completes that waiter's task as cancelled.
++   */
+   meta_color_device_generate_profile (color_device,
+                                       file_path,
+-                                      cancellable,
++                                      color_store->cancellable,
+                                       on_profile_generated,
+-                                      g_steal_pointer (&task));
++                                      generate_data);
+   return TRUE;
+ }
+ 
+@@ -559,8 +600,6 @@ meta_color_store_ensure_device_profile_finish (MetaColorStore  *color_store,
+   g_assert (g_task_get_source_tag (task) ==
+             meta_color_store_ensure_device_profile);
+ 
+-  g_hash_table_remove (color_store->pending_device_profiles, data->key);
+-
+   color_profile = g_task_propagate_pointer (task, error);
+   if (!color_profile)
+     return NULL;
