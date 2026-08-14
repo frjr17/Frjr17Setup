@@ -42,6 +42,21 @@ else
   cached "Firefox is not installed"
 fi
 
+# Nothing else on the system depends on these three, so they come out cleanly.
+# They are also dropped from the System app-folder list in gnomeSettings.sh —
+# keep the two in sync if you change this set.
+step "Removing unused GNOME default apps"
+unwanted=()
+for p in gnome-tour yelp gnome-weather; do
+  rpm -q "$p" >/dev/null 2>&1 && unwanted+=("$p")
+done
+if (( ${#unwanted[@]} )); then
+  run sudo dnf remove -y "${unwanted[@]}"
+  say "removed: ${unwanted[*]}"
+else
+  cached "tour, help and weather are already gone"
+fi
+
 # ─────────────────────────────────────────────
 # Installing apps (dnf)
 # ─────────────────────────────────────────────
@@ -69,6 +84,14 @@ if command -v brave-browser >/dev/null 2>&1; then
 else
   run bash -c 'curl -fsS https://dl.brave.com/install.sh | sh'
 fi
+
+step "Setting Brave's default fonts to Noto"
+# The math family is not part of Fedora's default Noto set.
+run sudo dnf install -y google-noto-sans-vf-fonts google-noto-serif-vf-fonts \
+                       google-noto-sans-mono-vf-fonts google-noto-sans-math-fonts
+# Warns and skips if Brave is open; the profile is merged, never replaced.
+run "$SCRIPT_DIR/braveFonts.sh" "$HOME/.config/BraveSoftware/Brave-Browser/Default" ||
+  warn "could not set Brave's fonts — close Brave and re-run ./braveFonts.sh"
 
 step "Installing Visual Studio Code"
 run sudo rpm --import https://packages.microsoft.com/keys/microsoft.asc

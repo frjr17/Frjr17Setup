@@ -122,11 +122,12 @@ app_folder Utilities 'X-GNOME-Shell-Utilities.directory' true "[
   'org.gnome.Calendar.desktop', 'org.gnome.Nautilus.desktop'
 ]"
 
+# Tour, Yelp (Help) and Weather are uninstalled by apps.sh, so they are left out
+# here — keep the two in sync if you change that set.
 app_folder System 'X-GNOME-Shell-System.directory' true "[
   'org.gnome.baobab.desktop', 'org.gnome.DiskUtility.desktop', 'org.gnome.Logs.desktop',
   'org.freedesktop.MalcontentControl.desktop', 'org.gnome.SystemMonitor.desktop',
-  'org.gnome.Weather.desktop', 'org.gnome.Settings.desktop', 'btrfs-assistant.desktop',
-  'org.gnome.Tour.desktop', 'org.gnome.Yelp.desktop', 'org.gnome.tweaks.desktop'
+  'org.gnome.Settings.desktop', 'btrfs-assistant.desktop', 'org.gnome.tweaks.desktop'
 ]"
 
 app_folder Office 'Office' false "[
