@@ -26,7 +26,13 @@ step "Installing gnome-extensions-cli"
 run pipx ensurepath
 # Reload shell environment to make pipx available immediately
 export PATH="$HOME/.local/bin:$PATH"
-run pipx install gnome-extensions-cli --system-site-packages
+# pipx's exit code for an already-installed package varies between versions, so
+# check for the binary rather than relying on it.
+if command -v gnome-extensions-cli >/dev/null 2>&1; then
+    cached "gnome-extensions-cli already installed"
+else
+    run pipx install gnome-extensions-cli --system-site-packages
+fi
 
 # ─────────────────────────────────────────────
 # Install Extension Manager (GUI)

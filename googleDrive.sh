@@ -18,23 +18,29 @@ CACHE_DIR="$HOME/.cache/rclone"
 LATEST_LOG="$CACHE_DIR/rclone-gdrive-bisync.log"
 
 RUN_INIT=0
+ASSUME_YES=${NONINTERACTIVE:-0}   # NONINTERACTIVE=1 implies --yes
 
 for arg in "$@"; do
   case "$arg" in
     --init)
       RUN_INIT=1
       ;;
+    --yes|-y)
+      ASSUME_YES=1
+      ;;
     --help|-h)
       cat <<EOF
 Usage:
   $0              Install/update service, timer, and notifications only
   $0 --init       Also run first baseline bisync with --resync
+  $0 --init --yes Skip the baseline confirmation (for unattended runs)
 
 Environment variables:
   REMOTE_NAME     Default: googleDrive
   LOCAL_DIR       Default: \$HOME/GoogleDrive
   TIMER_INTERVAL  Default: 1m
   MAX_DELETE      Default: 100
+  NONINTERACTIVE  1 implies --yes
 EOF
       exit 0
       ;;
@@ -228,12 +234,18 @@ if [ "$RUN_INIT" -eq 1 ]; then
     --dry-run \
     -v
 
-  # Not wrapped: the prompt must reach the terminal unbuffered.
-  read -r -p "Proceed with real baseline bisync? Type YES to continue: " CONFIRM
+  # This gates a --resync that can delete files, so it stays a prompt for humans
+  # and only an explicit --yes (or NONINTERACTIVE=1) skips it.
+  if [ "$ASSUME_YES" -eq 1 ]; then
+    say "--yes given — proceeding with the real baseline without confirmation"
+  else
+    # Not wrapped: the prompt must reach the terminal unbuffered.
+    read -r -p "Proceed with real baseline bisync? Type YES to continue: " CONFIRM
 
-  if [ "$CONFIRM" != "YES" ]; then
-    warn "baseline cancelled — service files were written, but the timer will not be enabled"
-    exit 1
+    if [ "$CONFIRM" != "YES" ]; then
+      warn "baseline cancelled — service files were written, but the timer will not be enabled"
+      exit 1
+    fi
   fi
 
   say "running the real baseline"

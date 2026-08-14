@@ -11,13 +11,22 @@ source "$SCRIPT_DIR/log.sh"
 
 step "Enabling the RPM Fusion repositories"
 # -y is required now: dnf's confirmation prompt is invisible through the log pipe.
-run sudo dnf install -y "https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm" "https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm"
+if rpm -q rpmfusion-free-release rpmfusion-nonfree-release >/dev/null 2>&1; then
+  cached "RPM Fusion already enabled"
+else
+  run sudo dnf install -y "https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm" "https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm"
+fi
 
 # ─────────────────────────────────────────────
 # Keyboard Commands
 # ─────────────────────────────────────────────
 
 step "Setting custom keyboard shortcuts"
+
+# gsettings talks to the user session bus. Over SSH there isn't one, and every
+# `gsettings set` below fails one at a time with no hint why — say it once, up front.
+[[ -n ${DBUS_SESSION_BUS_ADDRESS:-} ]] ||
+  warn "no session bus — GNOME settings will not apply; run this from a desktop session"
 
 # Window movement between monitors
 run gsettings set org.gnome.desktop.wm.keybindings move-to-monitor-down "['<Shift><Super>Down']"
