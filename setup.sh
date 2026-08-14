@@ -109,6 +109,7 @@ cat <<'EOF'
 Not run automatically, by design:
   ./fedoraHarden.sh --apply --yes   hardening; dry-run by default so you can read it first
   ./googleDrive.sh --init           needs `rclone config`, an interactive OAuth flow
+  ./mutterNightLight.sh             only for the dual identical-monitor setup; rebuilds mutter
 
 Reboot to pick up the docker group and the lid-close setting.
 EOF
