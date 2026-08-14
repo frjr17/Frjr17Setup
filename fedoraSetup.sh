@@ -37,7 +37,9 @@ run gsettings set org.gnome.desktop.wm.keybindings toggle-fullscreen "['F4']"
 # Show applications (Activities)
 run gsettings set org.gnome.shell.keybindings toggle-application-view "['<Super>a']"
 
-# Notifications
+# Notifications — Super+N is GNOME's default focus-active-notification, so free it
+# first, otherwise the two grabs collide and the message tray never opens.
+run gsettings set org.gnome.shell.keybindings focus-active-notification "[]"
 run gsettings set org.gnome.shell.keybindings toggle-message-tray "['<Super>n']"
 
 # Settings
@@ -48,6 +50,17 @@ step "Binding Super+E to the file explorer"
 run gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom0/ name 'Open File Explorer'
 run gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom0/ command 'nautilus'
 run gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom0/ binding '<Super>e'
+
+# The three settings above are inert until the path is listed here — this is the
+# step everyone forgets. Append instead of overwrite, so bindings added through
+# GNOME Settings survive a re-run.
+custom0=/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom0/
+bound=$(gsettings get org.gnome.settings-daemon.plugins.media-keys custom-keybindings)
+case $bound in
+  *"$custom0"*) say "custom0 already registered" ;;
+  '@as []'|'[]') run gsettings set org.gnome.settings-daemon.plugins.media-keys custom-keybindings "['$custom0']" ;;
+  *)             run gsettings set org.gnome.settings-daemon.plugins.media-keys custom-keybindings "${bound%]}, '$custom0']" ;;
+esac
 
 # ─────────────────────────────────────────────
 # Display Behavior
