@@ -55,4 +55,31 @@ extensions=(
 for ext in "${extensions[@]}"; do
   say "installing $ext"
   run gnome-extensions-cli install "$ext" || warn "failed to install: $ext"
+  run gnome-extensions enable "$ext" || warn "failed to enable: $ext"
+done
+
+# ─────────────────────────────────────────────
+# Apply extension settings
+# ─────────────────────────────────────────────
+
+step "Applying extension settings"
+# Only the keys that differ from each extension's schema default. Dash to Dock,
+# Just Perfection, Hide Activities and Magic Lamp run stock.
+settings=(
+  "user-theme/name 'WhiteSur-Dark-purple'"      # shell theme; whitesurTheme.sh only sets GTK
+  "Logo-menu/menu-button-icon-image 1"          # Fedora logo, not start-here
+  "Logo-menu/menu-button-icon-size 20"
+  "blur-my-shell/panel/sigma 0"                 # sigma 0 = no blur, only the dimming
+  "blur-my-shell/panel/brightness 0.41"
+  "blur-my-shell/panel/static-blur false"
+  "blur-my-shell/dash-to-dock/sigma 0"
+  "blur-my-shell/dash-to-dock/static-blur false"
+  "hidetopbar/mouse-sensitive true"             # reveal the top bar on hover
+  "moveclock/clock-before-statusmenu true"      # clock next to the status menu
+)
+
+for s in "${settings[@]}"; do
+  key=${s%% *} value=${s#* }
+  say "$key = $value"
+  run dconf write "/org/gnome/shell/extensions/$key" "$value"
 done
