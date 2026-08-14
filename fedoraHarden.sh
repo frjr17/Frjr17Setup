@@ -50,7 +50,7 @@ source "$SCRIPT_DIR/log.sh"   # BuildKit-style output: step / run / say / warn
 # Globals
 # ---------------------------------------------------------------------------
 DRY_RUN=1            # default; --apply flips to 0
-ASSUME_YES=0         # --yes: skip per-SECTION confirmation (not per-service)
+ASSUME_YES=${NONINTERACTIVE:-0}   # --yes: skip per-SECTION confirmation (not per-service)
 FORCE=0              # --force: re-init AIDE even if a db exists
 ONLY_SECTIONS=()     # --only foo (repeatable)
 SKIP_SECTIONS=()     # --skip foo (repeatable)
@@ -133,6 +133,13 @@ backup_file() {
 # ALWAYS prompt, even under --yes.
 ask() {
     local prompt=$1 reply
+    # No terminal (or NONINTERACTIVE=1) answers No rather than failing on /dev/tty.
+    # The rule this preserves: never disable a service without an explicit yes.
+    if [[ ${NONINTERACTIVE:-0} == 1 || ! -r /dev/tty ]]; then
+        log "prompt: '$prompt' -> auto-No (non-interactive)"
+        say "$prompt -> No (non-interactive)"
+        return 1
+    fi
     read -r -p "$prompt [y/N] " reply < /dev/tty
     log "prompt: '$prompt' -> '$reply'"
     [[ $reply =~ ^[Yy]([Ee][Ss])?$ ]]

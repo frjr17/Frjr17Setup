@@ -33,44 +33,55 @@ say "wrote /etc/dnf/libdnf5-plugins/actions.d/snapper.actions"
 # Snapper Configs
 # ─────────────────────────────────────────────
 step "Creating snapper configs for / and /home"
-run sudo snapper -c root create-config /
-run sudo snapper -c home create-config /home
+# create-config errors out when the config already exists.
+for cfg in root:/ home:/home; do
+  name=${cfg%%:*} path=${cfg#*:}
+  if sudo snapper -c "$name" get-config >/dev/null 2>&1; then
+    say "snapper config '$name' already exists"
+  else
+    run sudo snapper -c "$name" create-config "$path"
+  fi
+done
 
 run sudo restorecon -RFv /.snapshots
 run sudo restorecon -RFv /home/.snapshots
 
-run sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes
-run sudo snapper -c home set-config ALLOW_USERS=$USER SYNC_ACL=yes
+run sudo snapper -c root set-config "ALLOW_USERS=$USER" SYNC_ACL=yes
+run sudo snapper -c home set-config "ALLOW_USERS=$USER" SYNC_ACL=yes
 
-echo 'PRUNENAMES = ".snapshots"' | sudo tee -a /etc/updatedb.conf >/dev/null
-say "excluded .snapshots from updatedb"
+# Appended a duplicate line on every run before the guard.
+if grep -q '^PRUNENAMES' /etc/updatedb.conf; then
+  say ".snapshots already excluded from updatedb"
+else
+  echo 'PRUNENAMES = ".snapshots"' | sudo tee -a /etc/updatedb.conf >/dev/null
+  say "excluded .snapshots from updatedb"
+fi
 
 # ─────────────────────────────────────────────
 # grub-btrfs
 # ─────────────────────────────────────────────
 step "Installing grub-btrfs"
-cd /tmp
-rm -rf grub-btrfs   # rerun-safe: git clone aborts under set -e if the dir exists
-run git clone https://github.com/Antynea/grub-btrfs
-cd grub-btrfs
+if systemctl is-enabled grub-btrfsd.service >/dev/null 2>&1; then
+  cached "grub-btrfs already installed and enabled"
+else
+  src="$BK_SCRATCH/grub-btrfs"
+  run git clone --depth=1 https://github.com/Antynea/grub-btrfs "$src"
 
-sed -i.bkp \
-  -e '/^#GRUB_BTRFS_SNAPSHOT_KERNEL_PARAMETERS=/a \
+  sed -i.bkp \
+    -e '/^#GRUB_BTRFS_SNAPSHOT_KERNEL_PARAMETERS=/a \
 GRUB_BTRFS_SNAPSHOT_KERNEL_PARAMETERS="rd.live.overlay.overlayfs=1"' \
-  -e '/^#GRUB_BTRFS_GRUB_DIRNAME=/a \
+    -e '/^#GRUB_BTRFS_GRUB_DIRNAME=/a \
 GRUB_BTRFS_GRUB_DIRNAME="/boot/grub2"' \
-  -e '/^#GRUB_BTRFS_MKCONFIG=/a \
+    -e '/^#GRUB_BTRFS_MKCONFIG=/a \
 GRUB_BTRFS_MKCONFIG=/usr/bin/grub2-mkconfig' \
-  -e '/^#GRUB_BTRFS_SCRIPT_CHECK=/a \
+    -e '/^#GRUB_BTRFS_SCRIPT_CHECK=/a \
 GRUB_BTRFS_SCRIPT_CHECK=grub2-script-check' \
-  config
-say "patched config for Fedora's grub2 paths"
+    "$src/config"
+  say "patched config for Fedora's grub2 paths"
 
-run sudo make install
-run sudo systemctl enable --now grub-btrfsd.service
-
-cd ..
-rm -rf grub-btrfs
+  run sudo make -C "$src" install
+  run sudo systemctl enable --now grub-btrfsd.service
+fi
 
 # ─────────────────────────────────────────────
 # Automatic Snapshots

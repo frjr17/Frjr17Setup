@@ -129,6 +129,14 @@ install_app() {
     warn "no main Brave profile found; app will start logged out"
   fi
 
+  # Applied per app, not just inherited from the seed: the NOSEED profiles start
+  # empty, and a profile seeded before braveFonts.sh existed wouldn't carry it.
+  if "$SCRIPT_DIR/braveFonts.sh" "$DATA_DIR/$name/$name" >/dev/null 2>&1; then
+    say "default fonts: Noto"
+  else
+    warn "could not set fonts for $display (is it open?)"
+  fi
+
   cat >"$desktop" <<EOF
 [Desktop Entry]
 Version=1.0
