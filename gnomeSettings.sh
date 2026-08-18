@@ -88,6 +88,7 @@ run gsettings set org.gnome.shell favorite-apps "[
   'brave-pwa-work-whatsapp.desktop',
   'spotify_spotify.desktop',
   'net.thunderbird.Thunderbird.desktop',
+  'com.bitwarden.desktop.desktop',
   'org.musescore.MuseScore.desktop',
   'brave-pwa-chatgpt.desktop',
   'brave-pwa-claude.desktop',
