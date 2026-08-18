@@ -123,6 +123,9 @@ run flatpak install flathub org.musescore.MuseScore -y
 step "Installing Discord"
 run flatpak install flathub com.discordapp.Discord -y
 
+step "Installing Bitwarden"
+run flatpak install flathub com.bitwarden.desktop -y
+
 # ─────────────────────────────────────────────
 # Installing apps (snap)
 # ─────────────────────────────────────────────
