@@ -154,46 +154,6 @@ alias open='xdg-open'
 alias python='python3'
 alias venv_activate='source ./venv/bin/activate'
 alias create_venv='python -m venv venv && venv_activate'
-
-outlinepdf() {
-  if [[ $# -ne 1 ]]; then
-    echo "Usage: outlinepdf file.pdf"
-    return 1
-  fi
-
-  local input="$1"
-
-  if [[ ! -f "$input" ]]; then
-    echo "File not found: $input"
-    return 1
-  fi
-
-  if [[ "${input:l}" != *.pdf ]]; then
-    echo "Input must be a PDF: $input"
-    return 1
-  fi
-
-  local dir="${input:h}"
-  local name="${input:t}"
-  local backup="${dir}/${name:r}.original.pdf"
-  local temp="${dir}/.${name:r}.outlined.tmp.pdf"
-
-  cp "$input" "$backup"
-
-  gs \
-    -o "$temp" \
-    -sDEVICE=pdfwrite \
-    -dNoOutputFonts \
-    -dNOPAUSE \
-    -dBATCH \
-    -dSAFER \
-    "$input"
-
-  mv "$temp" "$input"
-
-  echo "Outlined PDF saved as: $input"
-  echo "Original backup saved as: $backup"
-}
 # --- end Frjr17Setup aliases ---
 EOF
 say "appended aliases and the outlinepdf helper"
@@ -212,3 +172,35 @@ else
     run sudo chsh -s "$zsh_path" "$USER"
     say "restart your terminal or run: exec zsh"
 fi
+
+# ─────────────────────────────────────────────
+# Ptyxis Terminal Configuration
+# ─────────────────────────────────────────────
+
+step "Configuring Ptyxis terminal"
+
+# gsettings talks to the user session bus. Over SSH there isn't one, and every
+# `gsettings set` below fails one at a time with no hint why — say it once, up front.
+[[ -n ${DBUS_SESSION_BUS_ADDRESS:-} ]] ||
+    warn "no session bus — Ptyxis settings will not apply; run this from a desktop session"
+
+run gsettings set org.gnome.Ptyxis use-system-font false
+run gsettings set org.gnome.Ptyxis font-name "FiraCode Nerd Font Semi-Bold 12"
+run gsettings set org.gnome.Ptyxis default-columns 130
+run gsettings set org.gnome.Ptyxis default-rows 30
+run gsettings set org.gnome.Ptyxis restore-window-size false
+
+# The default profile is created by Ptyxis on first launch with a random UUID,
+# so there's nothing to target until one exists — mint it ourselves instead.
+profile_uuid="$(gsettings get org.gnome.Ptyxis default-profile-uuid | tr -d "'")"
+if [[ -z "$profile_uuid" ]]; then
+    profile_uuid="$(uuidgen)"
+    run gsettings set org.gnome.Ptyxis profile-uuids "['$profile_uuid']"
+    run gsettings set org.gnome.Ptyxis default-profile-uuid "$profile_uuid"
+    say "created default profile $profile_uuid"
+fi
+run gsettings set "org.gnome.Ptyxis.Profile:/org/gnome/Ptyxis/Profiles/$profile_uuid/" palette xterm
+
+run gsettings set org.gnome.Ptyxis.Shortcuts copy-clipboard '<Control>c'
+run gsettings set org.gnome.Ptyxis.Shortcuts paste-clipboard '<Control>v'
+run gsettings set org.gnome.Ptyxis.Shortcuts search '<Control>f'
