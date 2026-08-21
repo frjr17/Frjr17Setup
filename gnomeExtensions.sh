@@ -60,7 +60,10 @@ extensions=(
 
 for ext in "${extensions[@]}"; do
   say "installing $ext"
-  run gnome-extensions-cli install "$ext" || warn "failed to install: $ext"
+  # --filesystem extracts the zip directly instead of going through the dbus
+  # backend, which pops a Yes/No dialog in the Shell and blocks forever with
+  # nobody there to click it.
+  run gnome-extensions-cli --filesystem install "$ext" || warn "failed to install: $ext"
   run gnome-extensions enable "$ext" || warn "failed to enable: $ext"
 done
 
