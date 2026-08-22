@@ -56,6 +56,7 @@ extensions=(
   moveclock@kuvaus.org
   compiz-alike-magic-lamp-effect@hermes83.github.com
   hidetopbar@mathieu.bidon.ca
+  wack-lockscreen-clock@rinzler69-wastaken.github.com
 )
 
 for ext in "${extensions[@]}"; do
